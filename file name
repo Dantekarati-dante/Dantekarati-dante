@@ -1,0 +1,583 @@
+# ...[the script is too long for a single message, so I'll break it into two parts]...
+
+# PART 1
+
+import tkinter as tk
+from tkinter import messagebox, filedialog, colorchooser, simpledialog, ttk
+import os
+import subprocess
+import urllib.request
+import sys
+import json
+
+from PIL import Image, ImageTk
+
+MINECRAFT_ICON_URL = "https://icons.iconarchive.com/icons/papirus-team/papirus-apps/256/minecraft-icon.png"
+MINECRAFT_ICON_FILE = "minecraft.png"
+MINECRAFT_PATH_FILE = "minecraft_path.txt"
+GAMES_FILE = "games.json"
+
+def ensure_pillow(master):
+    try:
+        import PIL
+        return True
+    except ImportError:
+        pass
+    result = {"allowed": False}
+    def allow():
+        result["allowed"] = True
+        prompt.destroy()
+    def deny():
+        prompt.destroy()
+    prompt = tk.Toplevel(master)
+    prompt.title("XUNLauncher - Download Required Files")
+    prompt.geometry("400x180")
+    prompt.configure(bg="#232323")
+    prompt.resizable(False, False)
+    prompt.grab_set()
+    label = tk.Label(prompt, text="May XUNLauncher download and install required files?", bg="#232323", fg="white", font=("Segoe UI", 13))
+    label.pack(pady=18)
+    info = tk.Label(prompt, text="info: Needs to install the Pillow library (for Minecraft icon support)", bg="#232323", fg="#cccccc", font=("Segoe UI", 10))
+    info.pack(pady=5)
+    btn_frame = tk.Frame(prompt, bg="#232323")
+    btn_frame.pack(pady=18)
+    tk.Button(btn_frame, text="Yes", width=10, command=allow, bg="#27c93f", fg="white", relief="flat").pack(side="left", padx=10)
+    tk.Button(btn_frame, text="No", width=10, command=deny, bg="#ff5f56", fg="white", relief="flat").pack(side="left", padx=10)
+    master.wait_window(prompt)
+    if result["allowed"]:
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "pillow"])
+            import PIL
+            return True
+        except Exception as e:
+            messagebox.showerror("Install Failed", f"Could not install Pillow:\n{e}", parent=master)
+            return False
+    else:
+        return False
+
+def check_and_download_icon(master):
+    if os.path.exists(MINECRAFT_ICON_FILE):
+        return True
+    result = {"allowed": False}
+    def allow():
+        result["allowed"] = True
+        prompt.destroy()
+    def deny():
+        prompt.destroy()
+    prompt = tk.Toplevel(master)
+    prompt.title("XUNLauncher - Download Required Files")
+    prompt.geometry("400x180")
+    prompt.configure(bg="#232323")
+    prompt.resizable(False, False)
+    prompt.grab_set()
+    label = tk.Label(prompt, text="May XUNLauncher download required files?", bg="#232323", fg="white", font=("Segoe UI", 13))
+    label.pack(pady=18)
+    info = tk.Label(prompt, text="info: Needs to download the Minecraft icon (minecraft.png)", bg="#232323", fg="#cccccc", font=("Segoe UI", 10))
+    info.pack(pady=5)
+    btn_frame = tk.Frame(prompt, bg="#232323")
+    btn_frame.pack(pady=18)
+    tk.Button(btn_frame, text="Yes", width=10, command=allow, bg="#27c93f", fg="white", relief="flat").pack(side="left", padx=10)
+    tk.Button(btn_frame, text="No", width=10, command=deny, bg="#ff5f56", fg="white", relief="flat").pack(side="left", padx=10)
+    master.wait_window(prompt)
+    if result["allowed"]:
+        try:
+            urllib.request.urlretrieve(MINECRAFT_ICON_URL, MINECRAFT_ICON_FILE)
+            return True
+        except Exception as e:
+            messagebox.showerror("Download Failed", f"Could not download Minecraft icon:\n{e}", parent=master)
+            return False
+    else:
+        return False
+
+def get_saved_minecraft_path():
+    if os.path.exists(MINECRAFT_PATH_FILE):
+        with open(MINECRAFT_PATH_FILE, "r", encoding="utf-8") as f:
+            path = f.read().strip()
+            if path:
+                return path
+    possible_paths = [
+        os.path.expandvars(r"%ProgramFiles(x86)%\Minecraft Launcher\MinecraftLauncher.exe"),
+        os.path.expandvars(r"%ProgramFiles%\Minecraft Launcher\MinecraftLauncher.exe"),
+        os.path.expandvars(r"%LocalAppData%\Microsoft\WindowsApps\Minecraft.exe"),
+        os.path.expandvars(r"%AppData%\.minecraft\MinecraftLauncher.exe"),
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    return ""
+
+def save_minecraft_path(path):
+    with open(MINECRAFT_PATH_FILE, "w", encoding="utf-8") as f:
+        f.write(path)
+
+def load_games():
+    if os.path.exists(GAMES_FILE):
+        with open(GAMES_FILE, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except Exception:
+                return []
+    return []
+
+def save_games(games):
+    with open(GAMES_FILE, "w", encoding="utf-8") as f:
+        json.dump(games, f, indent=2)
+
+# [PART 2 in next message]
+class XUNLauncher:
+    def __init__(self):
+        self.bg_color = "#1e1e1e"
+        self.outline_color = "#2b2b2b"
+        self.root = tk.Tk()
+        self.root.overrideredirect(True)
+        self.root.title("XUN Launcher")
+        self.root.geometry("500x480+100+100")
+        self.root.configure(bg=self.bg_color)
+        self.root.attributes("-topmost", False)
+        self.is_always_on_top = False
+
+        self.prev_geometry = "500x480+100+100"
+        self.is_fullscreen = False
+
+        # --- Top bar with buttons ---
+        self.topbar = tk.Canvas(self.root, height=30, bg=self.outline_color, highlightthickness=0)
+        self.topbar.pack(fill="x", side="top")
+
+        self.red = self.topbar.create_oval(10, 8, 26, 24, fill="#ff5f56", outline="#ff5f56")
+        self.orange = self.topbar.create_oval(30, 8, 46, 24, fill="#ffbd2e", outline="#ffbd2e")
+        self.green = self.topbar.create_oval(50, 8, 66, 24, fill="#27c93f", outline="#27c93f")
+
+        self.topbar.tag_bind(self.red, "<Button-1>", lambda e: self.root.destroy())
+        self.topbar.tag_bind(self.orange, "<Button-1>", self.toggle_fullscreen)
+        self.topbar.tag_bind(self.green, "<Button-1>", self.toggle_always_on_top)
+
+        self.topbar.bind("<ButtonPress-1>", self.start_move)
+        self.topbar.bind("<B1-Motion>", self.do_move)
+
+        # --- Title ---
+        self.title_label = tk.Label(self.root, text="XUN Launcher", bg=self.bg_color, fg="white", font=("Segoe UI", 16))
+        self.title_label.pack(pady=10)
+
+        # --- Games area (grid) ---
+        self.games_frame = tk.Frame(self.root, bg=self.bg_color)
+        self.games_frame.pack(pady=(5, 10))
+
+        # --- Load Minecraft icon and path ---
+        self.mc_icon = None
+        try:
+            img = Image.open(MINECRAFT_ICON_FILE).resize((48, 48), Image.LANCZOS)
+            self.mc_icon = ImageTk.PhotoImage(img)
+        except Exception:
+            self.mc_icon = None
+        self.minecraft_path = get_saved_minecraft_path()
+
+        # --- Load games ---
+        self.games = load_games()
+        self.game_buttons = []
+        self.blank_img = ImageTk.PhotoImage(Image.new("RGBA", (90, 90), (0, 0, 0, 0)))  # Transparent image for sizing
+
+        self.display_games()
+
+        # --- Right-click on background (root) for settings ---
+        self.root.bind("<Button-3>", self.show_settings_menu)
+
+        # --- Rainbow effect state ---
+        self.rainbow_active = False
+
+        # --- Update label in bottom-right ---
+        self.update_label = tk.Label(self.root, text="update 1.0.1", font=("Segoe UI", 10),
+                                    bg=self.bg_color, fg="#bbbbbb")
+        self.update_label.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-5)
+        self.root.bind("<Configure>", self.update_update_label_position)
+
+        self.root.mainloop()
+
+    def update_update_label_position(self, event=None):
+        self.update_label.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-5)
+
+    def display_games(self):
+        for btn in self.game_buttons:
+            btn.destroy()
+        self.game_buttons = []
+
+        # Always show Minecraft first, then added games
+        all_games = [{"name": "Minecraft", "path": self.minecraft_path, "icon": self.mc_icon, "is_mc": True}]
+        for game in self.games:
+            all_games.append({"name": game["name"], "path": game["path"], "icon": None, "is_mc": False})
+
+        max_per_row = 3
+
+        for idx, game in enumerate(all_games):
+            row = idx // max_per_row
+            col = idx % max_per_row
+            frame = tk.Frame(self.games_frame, bg=self.bg_color)
+            frame.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
+
+            if game["is_mc"]:
+                btn = tk.Button(
+                    frame,
+                    image=self.blank_img,
+                    text=game["name"],
+                    compound="top",
+                    font=("Segoe UI", 12),
+                    bg="#3a3a3a",
+                    fg="white",
+                    relief="flat",
+                    width=90, height=90,
+                    command=self.launch_minecraft
+                )
+                if game["icon"]:
+                    btn.config(image=game["icon"], compound="top")
+                btn.bind("<Button-3>", self.show_mc_context_menu)
+                btn.bind("<Button-3>", lambda e: (self.show_mc_context_menu(e), "break"))
+                btn.pack(expand=True, fill="both")
+            else:
+                btn = tk.Button(
+                    frame,
+                    image=self.blank_img,
+                    text=game["name"],
+                    compound="top",
+                    font=("Segoe UI", 12),
+                    bg="#3a3a3a",
+                    fg="white",
+                    relief="flat",
+                    width=90, height=90,
+                    wraplength=80,
+                    command=lambda path=game["path"]: self.launch_game(path)
+                )
+                btn.pack(expand=True, fill="both")
+                # Delete button ("X") in the top-right
+                del_btn = tk.Button(
+                    frame, text="✕", font=("Segoe UI", 9, "bold"), bg="#ff5f56", fg="white",
+                    relief="flat", width=2, height=1,
+                    command=lambda i=idx-1: self.delete_game(i)
+                )
+                del_btn.place(relx=1.0, rely=0.0, anchor="ne", x=-2, y=2)
+
+            self.game_buttons.append(frame)
+
+        for c in range(max_per_row):
+            self.games_frame.grid_columnconfigure(c, weight=1)
+
+    def delete_game(self, idx):
+        if 0 <= idx < len(self.games):
+            name = self.games[idx]["name"]
+            if messagebox.askyesno("Delete Game", f"Are you sure you want to delete '{name}'?"):
+                del self.games[idx]
+                save_games(self.games)
+                self.display_games()
+
+    def launch_game(self, path):
+        if path and os.path.exists(path):
+            try:
+                subprocess.Popen([path])
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to launch game:\n{e}")
+        else:
+            messagebox.showerror("Game Not Found", "Game executable not found.")
+
+    def toggle_fullscreen(self, event=None):
+        if not self.is_fullscreen:
+            self.prev_geometry = self.root.geometry()
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            self.root.geometry(f"{screen_width}x{screen_height}+0+0")
+        else:
+            self.root.geometry(self.prev_geometry)
+        self.is_fullscreen = not self.is_fullscreen
+
+    def toggle_always_on_top(self, event=None):
+        self.is_always_on_top = not self.is_always_on_top
+        self.root.attributes("-topmost", self.is_always_on_top)
+
+    def start_move(self, event):
+        self.x = event.x
+        self.y = event.y
+
+    def do_move(self, event):
+        x = event.x_root - self.x
+        y = event.y_root - self.y
+        self.root.geometry(f"+{x}+{y}")
+
+    def launch_minecraft(self):
+        path = self.minecraft_path
+        if path and os.path.exists(path):
+            try:
+                subprocess.Popen([path])
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to launch Minecraft:\n{e}")
+        else:
+            messagebox.showerror(
+                "Minecraft Not Found",
+                "Minecraft Launcher was not found in the specified location.\n"
+                "Right-click the Minecraft button to set the file location."
+            )
+
+    def show_mc_context_menu(self, event):
+        context = tk.Toplevel(self.root)
+        context.title("Minecraft file location")
+        context.geometry("420x110")
+        context.configure(bg="#232323")
+        context.resizable(False, False)
+        context.grab_set()
+        context.transient(self.root)
+
+        label = tk.Label(context, text="Minecraft file location", bg="#232323", fg="white", font=("Segoe UI", 12))
+        label.pack(pady=(10, 2))
+
+        entry_frame = tk.Frame(context, bg="#232323")
+        entry_frame.pack(pady=(0, 10), padx=10, fill="x")
+
+        path_var = tk.StringVar(value=self.minecraft_path)
+        entry = tk.Entry(entry_frame, textvariable=path_var, font=("Segoe UI", 10), bg="white", fg="black", relief="flat", width=38)
+        entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=2)
+
+        def change_path():
+            new_path = filedialog.askopenfilename(
+                title="Select Minecraft Launcher",
+                filetypes=[("Minecraft Launcher", "*.exe"), ("All files", "*.*")]
+            )
+            if new_path:
+                path_var.set(new_path)
+
+        change_btn = tk.Button(entry_frame, text="Change", command=change_path, font=("Segoe UI", 9), bg="#3a3a3a", fg="white", relief="flat", width=7)
+        change_btn.pack(side="left")
+
+        def save_and_close():
+            new_path = path_var.get().strip()
+            if new_path and os.path.exists(new_path):
+                self.minecraft_path = new_path
+                save_minecraft_path(new_path)
+                context.destroy()
+                self.display_games()
+            else:
+                messagebox.showerror("Invalid Path", "Please select a valid Minecraft Launcher file.", parent=context)
+
+        save_btn = tk.Button(context, text="Save", command=save_and_close, font=("Segoe UI", 10), bg="#27c93f", fg="white", relief="flat", width=10)
+        save_btn.pack(pady=(0, 10))
+
+        entry.focus_set()
+
+    def show_settings_menu(self, event):
+        settings = tk.Toplevel(self.root)
+        settings.title("Launcher Settings")
+        settings.geometry("360x400")
+        settings.configure(bg="#232323")
+        settings.resizable(False, False)
+        settings.grab_set()
+        settings.transient(self.root)
+
+        color_label = tk.Label(settings, text="Background color:", bg="#232323", fg="white", font=("Segoe UI", 11))
+        color_label.pack(pady=(16, 2))
+
+        color_frame = tk.Frame(settings, bg="#232323")
+        color_frame.pack(pady=(0, 10))
+        color_var = tk.StringVar(value=self.bg_color)
+        color_entry = tk.Entry(color_frame, textvariable=color_var, font=("Segoe UI", 10), bg="white", fg="black", width=15)
+        color_entry.pack(side="left", padx=(0, 8))
+
+        def pick_color():
+            color = colorchooser.askcolor(color_var.get(), parent=settings)[1]
+            if color:
+                color_var.set(color)
+
+        color_btn = tk.Button(color_frame, text="Pick", command=pick_color, font=("Segoe UI", 9), bg="#3a3a3a", fg="white", relief="flat", width=7)
+        color_btn.pack(side="left")
+
+        outline_label = tk.Label(settings, text="Outline color (top bar):", bg="#232323", fg="white", font=("Segoe UI", 11))
+        outline_label.pack(pady=(8, 2))
+
+        outline_frame = tk.Frame(settings, bg="#232323")
+        outline_frame.pack(pady=(0, 10))
+        outline_var = tk.StringVar(value=self.outline_color)
+        outline_entry = tk.Entry(outline_frame, textvariable=outline_var, font=("Segoe UI", 10), bg="white", fg="black", width=15)
+        outline_entry.pack(side="left", padx=(0, 8))
+
+        def pick_outline_color():
+            color = colorchooser.askcolor(outline_var.get(), parent=settings)[1]
+            if color:
+                outline_var.set(color)
+
+        outline_btn = tk.Button(outline_frame, text="Pick", command=pick_outline_color, font=("Segoe UI", 9), bg="#3a3a3a", fg="white", relief="flat", width=7)
+        outline_btn.pack(side="left")
+
+        size_label = tk.Label(settings, text="Window size (width x height):", bg="#232323", fg="white", font=("Segoe UI", 11))
+        size_label.pack(pady=(8, 2))
+
+        size_frame = tk.Frame(settings, bg="#232323")
+        size_frame.pack(pady=(0, 10))
+        width_var = tk.StringVar(value=str(self.root.winfo_width()))
+        height_var = tk.StringVar(value=str(self.root.winfo_height()))
+        width_entry = tk.Entry(size_frame, textvariable=width_var, font=("Segoe UI", 10), bg="white", fg="black", width=7)
+        width_entry.pack(side="left", padx=(0, 4))
+        tk.Label(size_frame, text="x", bg="#232323", fg="white", font=("Segoe UI", 10)).pack(side="left")
+        height_entry = tk.Entry(size_frame, textvariable=height_var, font=("Segoe UI", 10), bg="white", fg="black", width=7)
+        height_entry.pack(side="left", padx=(4, 0))
+
+        # Color Combinations button
+        def open_color_combos():
+            self.show_color_combos(color_var, outline_var)
+
+        combos_btn = tk.Button(settings, text="Color Combinations", font=("Segoe UI", 10, "bold"), bg="#5b86e5", fg="white", relief="flat", width=18, command=open_color_combos)
+        combos_btn.pack(pady=(12, 2))
+
+        # Add Your Own Game button
+        def add_game():
+            exe_path = filedialog.askopenfilename(
+                title="Select Game Executable",
+                filetypes=[("Executable Files", "*.exe"), ("All Files", "*.*")]
+            )
+            if not exe_path:
+                return
+            name = simpledialog.askstring("Game Name", "Enter a name for the game:", parent=settings)
+            if not name:
+                return
+            self.games.append({"name": name, "path": exe_path})
+            save_games(self.games)
+            self.display_games()
+            messagebox.showinfo("Game Added", f"Added: {name}", parent=settings)
+
+        add_game_btn = tk.Button(settings, text="Add Your Own Game", font=("Segoe UI", 10, "bold"), bg="#43E97B", fg="white", relief="flat", width=18, command=add_game)
+        add_game_btn.pack(pady=(12, 2))
+
+        def apply_settings():
+            color = color_var.get().strip()
+            try:
+                self.rainbow_active = False
+                self.root.configure(bg=color)
+                self.title_label.configure(bg=color)
+                self.games_frame.configure(bg=color)
+                self.update_label.configure(bg=color)
+                self.bg_color = color
+            except Exception:
+                messagebox.showerror("Invalid Color", "Please enter a valid color (e.g. #1e1e1e or 'white').", parent=settings)
+                return
+            outline = outline_var.get().strip()
+            try:
+                self.topbar.configure(bg=outline)
+                self.outline_color = outline
+            except Exception:
+                messagebox.showerror("Invalid Color", "Please enter a valid color for the outline.", parent=settings)
+                return
+            try:
+                w = int(width_var.get())
+                h = int(height_var.get())
+                self.root.geometry(f"{w}x{h}")
+            except Exception:
+                messagebox.showerror("Invalid Size", "Please enter valid numbers for width and height.", parent=settings)
+                return
+            settings.destroy()
+
+        apply_btn = tk.Button(settings, text="Apply", command=apply_settings, font=("Segoe UI", 10), bg="#27c93f", fg="white", relief="flat", width=10)
+        apply_btn.pack(pady=(8, 10))
+
+    def show_color_combos(self, color_var, outline_var):
+        combos = tk.Toplevel(self.root)
+        combos.title("Color Combinations")
+        combos.geometry("420x540")
+        combos.configure(bg="#232323")
+        combos.resizable(False, False)
+        combos.grab_set()
+        combos.transient(self.root)
+
+        # --- Scrollable frame for color buttons ---
+        canvas = tk.Canvas(combos, bg="#232323", highlightthickness=0)
+        frame = tk.Frame(canvas, bg="#232323")
+        scrollbar = tk.Scrollbar(combos, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        canvas.create_window((0,0), window=frame, anchor="nw")
+
+        def on_frame_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        frame.bind("<Configure>", on_frame_configure)
+
+        themes = [
+            ("Ocean Blue", "#1B2B34", "#3E5C76"),
+            ("Sunset Orange", "#FF6E48", "#FF8C69"),
+            ("Forest Green", "#2E4600", "#486B00"),
+            ("Lavender", "#B993D6", "#8CA6DB"),
+            ("Candy Pink", "#F7797D", "#FBD786"),
+            ("Night Mode", "#232526", "#414345"),
+            ("Peach", "#FFD6E0", "#FFB6B9"),
+            ("Mint", "#43E97B", "#38F9D7"),
+            ("Slate Gray", "#3A6073", "#16222A"),
+            ("Coral Reef", "#FF7F50", "#FF7256"),
+            ("Deep Purple", "#5D3A9B", "#8A2BE2"),
+            ("Steel Blue", "#4682B4", "#5F9EA0"),
+            ("Warm Sand", "#D2B48C", "#C19A6B"),
+            ("Cool Teal", "#008080", "#20B2AA"),
+            ("Royal Blue", "#4169E1", "#6495ED"),
+            ("Sunflower", "#FFC312", "#F79F1F"),
+            ("Rose", "#F64F59", "#C471F5"),
+            ("Skyline", "#1488CC", "#2B32B2"),
+        ]
+
+        def set_theme(bg, outline):
+            self.rainbow_active = False
+            color_var.set(bg)
+            outline_var.set(outline)
+            self.root.configure(bg=bg)
+            self.title_label.configure(bg=bg)
+            self.games_frame.configure(bg=bg)
+            self.update_label.configure(bg=bg)
+            self.topbar.configure(bg=outline)
+            self.bg_color = bg
+            self.outline_color = outline
+
+        def start_rainbow():
+            self.rainbow_active = True
+            combos.destroy()
+            self.animate_rainbow()
+
+        for name, bg, outline in themes:
+            btn = tk.Button(frame, text=name, font=("Segoe UI", 10, "bold"), bg=bg, fg="white", relief="flat", width=30,
+                            command=lambda b=bg, o=outline: set_theme(b, o))
+            btn.pack(pady=4, padx=10)
+
+        # Rainbow button at bottom
+        rainbow_btn = tk.Button(frame, text="Rainbow", font=("Segoe UI", 10, "bold"), bg="#FF5E62", fg="white", relief="flat", width=30, command=start_rainbow)
+        rainbow_btn.pack(pady=10, padx=10)
+
+    def animate_rainbow(self):
+        import colorsys
+        self.rainbow_active = True
+        steps = 60
+        t = [0]
+
+        def update():
+            if not self.rainbow_active:
+                return
+            hue = (t[0] % steps) / steps
+            rgb = colorsys.hsv_to_rgb(hue, 0.7, 1.0)
+            bg = '#%02x%02x%02x' % (int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
+            outline_hue = (hue + 0.15) % 1.0
+            outline_rgb = colorsys.hsv_to_rgb(outline_hue, 0.7, 1.0)
+            outline = '#%02x%02x%02x' % (int(outline_rgb[0]*255), int(outline_rgb[1]*255), int(outline_rgb[2]*255))
+            self.root.configure(bg=bg)
+            self.title_label.configure(bg=bg)
+            self.games_frame.configure(bg=bg)
+            self.update_label.configure(bg=bg)
+            self.topbar.configure(bg=outline)
+            self.bg_color = bg
+            self.outline_color = outline
+            t[0] += 1
+            self.root.after(50, update)
+        update()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.withdraw()
+    if not ensure_pillow(root):
+        messagebox.showinfo("XUNLauncher", "Pillow is required for icon support. Exiting.")
+        root.destroy()
+        sys.exit(0)
+    if check_and_download_icon(root):
+        root.destroy()
+        XUNLauncher()
+    else:
+        messagebox.showinfo("XUNLauncher", "Required files not downloaded. Exiting.")
+        root.destroy()
+        sys.exit(0)
